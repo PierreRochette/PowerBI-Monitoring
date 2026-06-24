@@ -1,28 +1,18 @@
-# DECLARATION DES FONCTIONS 
-# LES FONCTIONS POWER BI ET SQL SONT TOUTES DEFINIES
-# POUR L'ORCHESTRATION DE LEUR EXECUTION, CHERCHER LA SECTION COMMENTEE 'MAIN'
-# EN CAPITALE COMME CETTE EN-TÊTE
+# This section is dedicated to declaring functions
+# Check a comment "MAIN" to see their orchestration
 
-## FONCTIONS POWER BI 
 
 # GetPowerBiToken : 
-# Récupère un token OAuth2 pour l'API Power BI via le flux Client Credentials.
-# Ce flux est conçu pour les applications s'authentifiant sans utilisateur 
-# (service-to-service).
-# Prérequis : l'App Registration doit avoir les permissions API Power BI configurées 
-# dans Entra.
+# Get OAuth2 token for PBI API
+# Prérequisite : l'App Registration has Power BI permissions configured in Entra 
 
 function GetPowerBiToken {
-
-    # Paramètres de la fonction à appeler
 
     param(
         [string]$TenantId, # Tenant Azure AD 
         [string]$ClientId, # Identifiant public de l'application 
         [string]$ClientSecret # Secret de l'application
     )
-
-    # Payload pour la requête API
 
     $body = @{
         grant_type    = "client_credentials"
@@ -37,13 +27,13 @@ function GetPowerBiToken {
             -Uri "https://login.microsoftonline.com/$TenantId/oauth2/token" `
             -Body $body
 
-        # On retourne uniquement le access Token après avoir appelé le endpoint
+        
 
         return $response.access_token
     
     }
     catch {
-        # Log en cas d'échec
+  
         Write-Error "Échec obtention du token : $_"
         exit
     }
@@ -51,21 +41,19 @@ function GetPowerBiToken {
 }
 
 # GetPowerBIActivityEvents : 
-# Récupère tous les événements d'activité Power BI sur une plage de dates donnée.
-# L'API pagine les résultats — cette fonction gère automatiquement la pagination
-# via continuationUri jusqu'à ce que lastResultSet soit true.
-# Contrainte API : la plage StartDate/EndDate ne peut pas dépasser 24 heures.
+# All ActivityEvents in the admin endpoint
+# Check Microsoft offical doc for further infos
+# https://learn.microsoft.com/fr-fr/rest/api/power-bi/admin/get-activity-events
 
 function GetPowerBIActivityEvents {
 
     param(
-        [string]$Token, # Token PowerBI issu de l'appel à la fonction GetPowerBiToken
-        [string]$StartDate, # Date de début, gérée par une fonction SQL dans le main
+        [string]$Token, 
+        [string]$StartDate, 
         [string]$EndDate, # yyyy-MM-ddTHH:59:59.000Z
-        [string]$Filter = "" # Optionnel pour filtrer sur le type d'activité Filtre OData optionnel, ex: "Activity eq 'ViewReport'"
+        [string]$Filter = "" # Optionnal
     )
 
-    # Les dates doivent être entre guillements simples dans la requête
     $uri = "https://api.powerbi.com/v1.0/myorg/admin/activityevents?startDateTime='$StartDate'&endDateTime='$EndDate'"
 
     if($Filter -ne "") {
@@ -74,9 +62,7 @@ function GetPowerBIActivityEvents {
 
     $allEvents = @()
 
-    # Boucle de pagination : l'API retourne jusqu'à 5000 events par page.
-    # À chaque itération, continuationUri pointe vers la page suivante.
-    # La boucle s'arrête quand lastResultSet passe à true.
+    # Pagination loop
 
     do {
 
@@ -96,14 +82,6 @@ function GetPowerBIActivityEvents {
     return $allEvents
 
 }
-
-## FONCTIONS SQL
-
-# Invoke-SqlQuery
-# Exécute une requête SQL sans retour de données (DDL ou DML : CREATE, INSERT, 
-# UPDATE, DELETE).
-# Pour des requêtes SELECT, utiliser ExecuteReader à la place de ExecuteNonQuery.
-# Cette fonction sera ensuite utilisée pour initialiser la database et inscrire les données
 
 function Invoke-SqlQuery {
 
@@ -131,8 +109,7 @@ function Invoke-SqlQuery {
 
 }
 
-# Get-SqlToken
-# Récupère un token OAuth2 pour Azure SQL via le flux Client Credentials.
+# Token OAuth2 for Azure SQL 
 
 function Get-SqlToken {
 
@@ -141,11 +118,6 @@ function Get-SqlToken {
         [string]$ClientId, 
         [string]$ClientSecret
     )
-
-    # Le scope "/.default" demande 
-    # toutes les permissions déjà accordées à l'App Registration.
-    # L'App Registration doit être membre d'un rôle sur la base SQL 
-    # (db_datareader, db_datawriter...).
 
     $body = @{
         grant_type      = "client_credentials"
@@ -171,10 +143,6 @@ function Get-SqlToken {
     }
 
 }
-
-#Initialize-Database
-# Crée la table Bronze ActivityEvents si elle n'existe pas encore.
-# Idempotente : peut être appelée à chaque exécution du runbook sans risque.
 
 function Initialize-Database {
 
@@ -235,10 +203,6 @@ END
 
 }
 
-# WriteEventsToDatabase
-# Insère tous les événements en base via SqlBulkCopy (insertion en batch).
-# Plus performant que des INSERT un par un — recommandé pour des volumes > 100 lignes.
-
 function WriteEventsToDatabase {
 
     param(
@@ -247,11 +211,6 @@ function WriteEventsToDatabase {
         [string]$Database, 
         [string]$Token
     )
-
-    # Construction du DataTable en mémoire avant l'insertion bulk.
-    # Les colonnes de type [object] acceptent à la fois des valeurs typées et DBNull,
-    # ce qui est nécessaire pour les colonnes INT, BIT et DATETIME2 nullable en SQL.
-    # Les colonnes de type [string] sont pour les NVARCHAR.
 
     $dt = New-Object System.Data.DataTable
 
@@ -303,9 +262,6 @@ function WriteEventsToDatabase {
 
         $row = $dt.NewRow()
 
-        # Règle de mapping null → DBNull :
-        # - Chaînes (NVARCHAR)  : if ($event.Champ) — null et chaîne vide sont falsy
-        # - Numériques/booléens : if ($null -ne $event.Champ) — évite de traiter 0 ou $false comme null
 
         $row["EventId"]                  = if ($event.Id)                                  { $event.Id }                       else { [DBNull]::Value }
         $row["RecordType"]               = if ($null -ne $event.RecordType)               { $event.RecordType }               else { [DBNull]::Value }
@@ -360,11 +316,6 @@ function WriteEventsToDatabase {
     $bulkCopy.DestinationTableName = "ActivityEvents"
     $bulkCopy.BulkCopyTimeout = 300
 
-    # Mapping explicite colonne DataTable → colonne SQL.
-    # Obligatoire ici car la table SQL contient "Id" (IDENTITY) en première position :
-    # sans mapping, SqlBulkCopy mappe par position et tente d'écrire dans Id, ce qui échoue.
-    # "Id" et "InsertedAt" sont exclus — gérés automatiquement par SQL Server.
-
     $bulkCopy.ColumnMappings.Add("EventId",                  "EventId")                  | Out-Null
     $bulkCopy.ColumnMappings.Add("RecordType",               "RecordType")               | Out-Null
     $bulkCopy.ColumnMappings.Add("CreationTime",             "CreationTime")             | Out-Null
@@ -412,9 +363,6 @@ function WriteEventsToDatabase {
 
 }
 
-# SUPPRESSION DES ANCIENNES DONNEES
-# Déclaration de fonction
-
 function Remove-OldRecords {
 
     param(
@@ -436,9 +384,8 @@ WHERE InsertedAt < '$cutoffDate'
 }
 
 # MAIN 
-# ORCHESTRATION DES DIFFERENTES FONCTIONS CREES 
 
-# 1. Récupération des variables du compte d'automation
+# 1. Getting Automation Account variables
 
 $tenantId       = Get-AutomationVariable -Name "PBI-TenantId"
 $clientId       = Get-AutomationVariable -Name "PBI-ClientId"
@@ -446,32 +393,25 @@ $clientSecret   = Get-AutomationVariable -Name "PBI-ClientSecret"
 $sqlServer      = Get-AutomationVariable -Name "SQL-Server"
 $sqlDatabase    = Get-AutomationVariable -Name "SQL-Database"
 
-Write-Host "Variables OK"
-Write-Host "Getting tokens...."
-
-# 2. Récupérer le token power bi et le token sql server
+# 2. Get tokens (PBI & SQL Server)
 
 $pbiToken = GetPowerBiToken -TenantId $tenantId -ClientId $clientId -ClientSecret $clientSecret
-Write-Host "Power BI Token OK"
 
 $sqlToken = Get-SqlToken -TenantId $tenantId -ClientId $clientId -ClientSecret $clientSecret
-Write-Host "SQL Token OK"
 
-Write-Host "Calling API..."
 
-# 3. Générer start date et end date (J-1 entre 00:00 et 23:59:59)
+# 3. Fetching datas from day -1 
 
 $startDate = (Get-Date).AddDays(-1).ToString("yyyy-MM-ddT00:00:00.000Z")
 $endDate   = (Get-Date).AddDays(-1).ToString("yyyy-MM-ddT23:59:59.000Z")
 
-# Pour debugger
-# Ne pas utiliser de valeurs en dur sur les dates pour la prod
+# For debugging 
 
 # $startDate = "2026-06-19T00:00:00.000Z"
 # $endDate   = "2026-06-19T23:59:59.000Z"
 
-# 4. Call API PowerBI avec token et dates, sans filtre 
-# Enregistrement de ce qui est récupéré dans une variable events
+# 4. PBI API call 
+# Saving the response in events variable
 
 $events = GetPowerBIActivityEvents `
     -Token $pbiToken `
@@ -479,31 +419,21 @@ $events = GetPowerBIActivityEvents `
     -EndDate $endDate `
     -Filter ""
 
-Write-Host "Total Events : $($events.Count)"
-
-Write-Host "SQL Token length: $($sqlToken.Length)"
-
-# 4 bis - Arrêt du script si pas de token SQL Server valid
+# 4 bis - Stopping script if no valid SQL token
 
 if ($sqlToken.Length -eq 0) {
     Write-Error "SQL Token vide - arrêt du runbook"
     exit
 }
 
-Write-Host "Checking database..."
-
-# 5. Initialisation de la base de données si nécéssaire 
+# 5. Initialize database 
 
 Initialize-Database -Server $sqlServer -Database $sqlDatabase -Token $sqlToken
 
-Write-Host "Insertion en base..."
+# 6. Retention
 
-# 6. Nettoyage des données
+Remove-OldRecords -Server $sqlServer -Database $sqlDatabase -Token $sqlToken -RetentionDays 90
 
-Remove-OldRecords -Server $sqlServer -Database $sqlDatabase -Token $sqlToken -RetentionDays 3 
-
-# 7. Insertion des évènements en appelant la fonction WriteEventsToDatabase
+# 7. Insert events 
 
 WriteEventsToDatabase -Events $events -Server $sqlServer -Database $sqlDatabase -Token $sqlToken
-
-Write-Output "Runbook done."
