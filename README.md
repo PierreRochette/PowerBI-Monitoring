@@ -94,7 +94,7 @@ The Runbook is scheduled via Azure Automation to run daily. Since the Power BI A
 
 The Power BI semantic model follows a **star schema** with one central fact table and six dimension tables.
 
-[semantic_model](semantic_model.png)
+![semantic_model](semantic_model.png)
 
 ### Tables
 
