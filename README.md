@@ -2,6 +2,9 @@
 
 A Power BI monitoring solution built for a client, designed to track report usage, user activity, and adoption metrics across a Power BI tenant. The pipeline collects activity events from the Power BI Admin API, stores them in Azure SQL, and exposes them through an interactive Power BI report.
 
+![Schéma_du_projet](project_schema.png)
+![Aperçu_du_dashboard](preview_post_release.png)
+
 > ⚠️ **This project involves significant Azure administration prerequisites.** Many of the setup steps described below require elevated permissions on the Azure tenant (Entra ID, Azure Automation, Azure SQL, Key Vault). These must be coordinated with a tenant administrator before implementation.
 
 ***
@@ -91,7 +94,7 @@ The Runbook is scheduled via Azure Automation to run daily. Since the Power BI A
 
 The Power BI semantic model follows a **star schema** with one central fact table and six dimension tables.
 
-
+[semantic_model](semantic_model.png)
 
 ### Tables
 
